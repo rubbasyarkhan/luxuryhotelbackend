@@ -1,0 +1,40 @@
+{
+  "name": "@asim8899/backend-boilerplate",
+  "version": "1.0.5",
+  "main": "server.js",
+  "type": "module",
+  "bin": {
+    "create-boilerplate-cli": "server.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "asim",
+  "license": "ISC",
+  "description": "backend boilerplate already integrate nodemailer , authentication , and cloudinary middleware ",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.2",
+    "multer": "^1.4.5-lts.1",
+    "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.17.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "files": [
+    "./server.js",
+    "./env.sample.txt",
+    "./src"
+  ]
+}
