@@ -42,7 +42,7 @@ export const Signup = async (req, res) => {
 
     const payload = { user: { id: newUser._id } };
     const jwtSecret = process.env.JWT_SECRET_KEY || "luxurystay-super-secret-jwt-key-2024";
-    const token = jwt.sign(payload, jwtSecret, { expiresIn: "1h" });
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: "5h" });
 
     newUser.token = token;
     await newUser.save();
@@ -89,7 +89,7 @@ export const Login = async (req, res) => {
 
     const payload = { user: { id: user._id } };
     const jwtSecret = process.env.JWT_SECRET_KEY || "luxurystay-super-secret-jwt-key-2024";
-    const token = jwt.sign(payload, jwtSecret, { expiresIn: "1h" });
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: "5h" });
 
     user.token = token;
     user.lastLogin = new Date();

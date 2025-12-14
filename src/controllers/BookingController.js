@@ -2,70 +2,279 @@ import { BookingModel } from "../Models/Booking.model.js";
 import { RoomModel } from "../Models/Room.model.js";
 import { Usermodle } from "../Models/User.model.js";
 
-export const createBooking = async (req, res) => {
+
+export const guestBookRoom = async (req, res) => {
   try {
-    const bookingData = req.body;
-
-    const { guest, room, checkInDate, checkOutDate, numberOfGuests } = bookingData;
-
-    if (!guest || !room || !checkInDate || !checkOutDate || !numberOfGuests) {
-      return res.status(400).json({ message: "All required fields must be provided" });
+    /* ============================
+       1️⃣ AUTH CHECK
+    ============================ */
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        message: "Unauthorized. Please login to book a room."
+      });
     }
 
+    const guest = req.user.id;
+
+    /* ============================
+       2️⃣ REQUEST BODY
+    ============================ */
+    const {
+      room,
+      checkInDate,
+      checkOutDate,
+      numberOfGuests,
+      specialRequests = ""
+    } = req.body;
+
+    /* ============================
+       3️⃣ BASIC VALIDATION
+    ============================ */
+    if (!room || !checkInDate || !checkOutDate || !numberOfGuests) {
+      return res.status(400).json({
+        message: "All required fields must be provided",
+        received: req.body
+      });
+    }
+
+    const guestsCount = Number(numberOfGuests);
+    if (isNaN(guestsCount) || guestsCount <= 0) {
+      return res.status(400).json({
+        message: "Number of guests must be a valid number"
+      });
+    }
+
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+
+    if (isNaN(checkIn) || isNaN(checkOut)) {
+      return res.status(400).json({
+        message: "Invalid check-in or check-out date"
+      });
+    }
+
+    if (checkIn >= checkOut) {
+      return res.status(400).json({
+        message: "Check-out date must be after check-in date"
+      });
+    }
+
+    /* ============================
+       4️⃣ ROOM CHECK
+    ============================ */
+    const roomExists = await RoomModel.findOne({
+      _id: room,
+      isActive: true
+    });
+
+    if (!roomExists) {
+      return res.status(404).json({
+        message: "Room not found or inactive"
+      });
+    }
+
+    if (guestsCount > roomExists.capacity) {
+      return res.status(400).json({
+        message: `Room capacity is ${roomExists.capacity}`
+      });
+    }
+
+    /* ============================
+       5️⃣ OVERLAPPING BOOKINGS
+    ============================ */
+    const overlappingBooking = await BookingModel.findOne({
+      room,
+      status: { $in: ["Pending", "Confirmed", "Checked In"] },
+      checkInDate: { $lt: checkOut },
+      checkOutDate: { $gt: checkIn }
+    });
+
+    if (overlappingBooking) {
+      return res.status(400).json({
+        message: "Room is already booked for selected dates"
+      });
+    }
+
+    /* ============================
+       6️⃣ PRICE CALCULATION
+    ============================ */
+    const nights = Math.ceil(
+      (checkOut - checkIn) / (1000 * 60 * 60 * 24)
+    );
+
+    if (nights <= 0) {
+      return res.status(400).json({
+        message: "Invalid booking duration"
+      });
+    }
+
+    const totalAmount = nights * roomExists.pricePerNight;
+
+    /* ============================
+       6.1️⃣ GENERATE BOOKING NUMBER
+    ============================ */
+    const generateBookingNumber = () => {
+      const timestamp = Date.now().toString().slice(-6);
+      const random = Math.floor(100 + Math.random() * 900); // 3-digit random
+      return `BK${timestamp}${random}`;
+    };
+
+    const bookingNumber = generateBookingNumber();
+
+    /* ============================
+       7️⃣ CREATE BOOKING
+    ============================ */
+    const booking = new BookingModel({
+      guest,
+      room,
+      checkInDate: checkIn,
+      checkOutDate: checkOut,
+      numberOfGuests: guestsCount,
+      totalAmount,
+      specialRequests,
+      status: "Pending",
+      paymentStatus: "Pending",
+      bookingNumber, // ✅ Added
+      createdBy: guest
+    });
+
+    await booking.save();
+
+    // Populate for response
+    const populatedBooking = await booking.populate([
+      { path: "guest", select: "name email" },
+      { path: "room", select: "roomNumber roomType pricePerNight" }
+    ]);
+
+    return res.status(201).json({
+      message: "Booking request submitted successfully",
+      booking: populatedBooking
+    });
+
+  } catch (error) {
+    console.error("❌ Guest booking error:", error);
+    return res.status(500).json({
+      message: "Internal server error"
+    });
+  }
+};
+
+
+
+
+
+
+
+
+
+export const createBooking = async (req, res) => {
+  try {
+    const { room, checkInDate, checkOutDate, numberOfGuests } = req.body;
+
+    /* =====================
+       1️⃣ AUTH
+    ===================== */
+    const guest = req.user.id;
+
+    if (!room || !checkInDate || !checkOutDate || !numberOfGuests) {
+      return res.status(400).json({
+        message: "All required fields must be provided"
+      });
+    }
+
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+
+    if (checkIn >= checkOut) {
+      return res.status(400).json({
+        message: "Check-out date must be after check-in date"
+      });
+    }
+
+    /* =====================
+       2️⃣ ROOM VALIDATION
+    ===================== */
     const roomExists = await RoomModel.findById(room);
     if (!roomExists) {
       return res.status(404).json({ message: "Room not found" });
     }
 
-    if (roomExists.status !== 'Available') {
-      return res.status(400).json({ message: "Room is not available" });
-    }
-
     if (roomExists.capacity < numberOfGuests) {
-      return res.status(400).json({ message: `Maximum Room Capacity for the number of guests is ${roomExists.capacity}` });
+      return res.status(400).json({
+        message: `Room capacity is ${roomExists.capacity}`
+      });
     }
 
-    const existingBooking = await BookingModel.findOne({
+    /* =====================
+       3️⃣ OVERLAP CHECK
+    ===================== */
+    const overlappingBooking = await BookingModel.findOne({
       room,
-      status: { $in: ['Confirmed', 'Checked In'] },
-      $or: [
-        {
-          checkInDate: { $lte: new Date(checkOutDate) },
-          checkOutDate: { $gte: new Date(checkInDate) }
-        }
-      ]
+      status: { $in: ["Confirmed", "Checked In", "Pending"] },
+      checkInDate: { $lt: checkOut },
+      checkOutDate: { $gt: checkIn }
     });
 
-    if (existingBooking) {
-      return res.status(400).json({ message: "Room is already booked for the selected dates" });
+    if (overlappingBooking) {
+      return res.status(400).json({
+        message: "Room already booked for selected dates"
+      });
     }
 
-    const nights = Math.ceil((new Date(checkOutDate) - new Date(checkInDate)) / (1000 * 60 * 60 * 24));
-    const totalAmount = roomExists.pricePerNight * nights;
+    /* =====================
+       4️⃣ PRICE CALCULATION
+    ===================== */
+    const nights = Math.ceil(
+      (checkOut - checkIn) / (1000 * 60 * 60 * 24)
+    );
 
+    const totalAmount = nights * roomExists.pricePerNight;
+
+    /* =====================
+       5️⃣ BOOKING NUMBER
+    ===================== */
+    const generateBookingNumber = () => {
+      const timestamp = Date.now().toString().slice(-6);
+      const random = Math.floor(100 + Math.random() * 900);
+      return `BK${timestamp}${random}`;
+    };
+
+    const bookingNumber = generateBookingNumber();
+
+    /* =====================
+       6️⃣ CREATE BOOKING
+    ===================== */
     const booking = await BookingModel.create({
-      ...bookingData,
+      guest,
+      room,
+      checkInDate: checkIn,
+      checkOutDate: checkOut,
+      numberOfGuests,
       totalAmount,
-      createdBy: req.user?.id
+      bookingNumber, // ✅ FIXED
+      status: "Confirmed",
+      paymentStatus: "Pending",
+      createdBy: guest
     });
 
-    // Update room status
-    await RoomModel.findByIdAndUpdate(room, { status: 'Occupied' });
+    const populatedBooking = await booking.populate([
+      { path: "guest", select: "name email" },
+      { path: "room", select: "roomNumber roomType pricePerNight" }
+    ]);
 
-    // Populate the booking with guest and room details
-    const populatedBooking = await BookingModel.findById(booking._id)
-      .populate('guest', 'name email')
-      .populate('room', 'roomNumber roomType pricePerNight');
-
-    res.status(201).json({
+    return res.status(201).json({
       message: "Booking created successfully",
       booking: populatedBooking
     });
+
   } catch (error) {
-    console.error("Create booking error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("❌ Create booking error:", error);
+    return res.status(500).json({
+      message: "Internal server error"
+    });
   }
 };
+
 
 // Get all bookings with filtering and pagination
 export const getAllBookings = async (req, res) => {

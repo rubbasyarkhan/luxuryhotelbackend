@@ -6,63 +6,57 @@ dotenv.config();
 const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers["authorization"];
-    
-    if (!authHeader) {
-      return res
-        .status(401)
-        .json({ message: "No authorization header provided", status: "failed" });
-    }
 
-    if (!authHeader.startsWith("Bearer ")) {
-      return res
-        .status(401)
-        .json({ message: "Invalid authorization header format", status: "failed" });
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        message: "Unauthorized",
+        status: "failed"
+      });
     }
 
     const token = authHeader.split(" ")[1];
 
-    if (!token) {
-      return res
-        .status(401)
-        .json({ message: "No token provided, authorization denied", status: "failed" });
-    }
+    const jwtSecret =
+      process.env.JWT_SECRET_KEY || "luxurystay-super-secret-jwt-key-2024";
 
-    // Verify the token
-    const jwtSecret = process.env.JWT_SECRET_KEY || "luxurystay-super-secret-jwt-key-2024";
     const decoded = jwt.verify(token, jwtSecret);
 
-    if (!decoded || !decoded.user || !decoded.user.id) {
-      return res
-        .status(401)
-        .json({ message: "Invalid token payload", status: "failed" });
+    if (!decoded?.user?.id) {
+      return res.status(401).json({
+        message: "Invalid token payload",
+        status: "failed"
+      });
     }
 
-    req.user = decoded.user;
+    const user = await Usermodle.findById(decoded.user.id).select("-password");
+
+    if (!user) {
+      return res.status(401).json({
+        message: "User no longer exists",
+        status: "failed"
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        message: "Account is deactivated",
+        status: "failed"
+      });
+    }
+
+    req.user = user; // ✅ full user object
     next();
   } catch (error) {
     console.error("Authentication error:", error);
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        message: "Invalid token format", 
-        status: "failed",
-        error: "JWT_MALFORMED"
-      });
-    } else if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        message: "Token has expired", 
-        status: "failed",
-        error: "JWT_EXPIRED"
-      });
-    } else {
-      return res.status(401).json({ 
-        message: "Token verification failed", 
-        status: "failed",
-        error: "JWT_VERIFICATION_FAILED"
-      });
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Token expired" });
     }
+
+    return res.status(401).json({ message: "Authentication failed" });
   }
 };
+
 
 export const authorizeRoles = (...roles) => {
   return async (req, res, next) => {

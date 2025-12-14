@@ -8,9 +8,10 @@ import {
   checkOut,
   cancelBooking,
   getBookingStatistics,
-  deleteBooking
+  deleteBooking,
+  guestBookRoom
 } from "../controllers/BookingController.js";
-import authMiddleware from "../middleware/Auth.middleware.js";
+import authMiddleware, { requireGuest } from "../middleware/Auth.middleware.js";
 
 const router = express.Router();
 
@@ -18,8 +19,20 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // Booking operations
-router.post("/", createBooking);
-router.get("/", getAllBookings);
+
+
+router.post(
+  "/guest-book",
+  authMiddleware,
+  requireGuest,
+  guestBookRoom
+);
+router.post(
+  "/",
+  authMiddleware,
+  requireGuest,
+  createBooking
+); router.get("/", getAllBookings);
 router.delete("/:id", deleteBooking);
 router.get("/statistics", getBookingStatistics);
 router.get("/:id", getBookingById);
